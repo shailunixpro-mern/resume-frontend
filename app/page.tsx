@@ -60,6 +60,8 @@ type BackendSystemStatus = {
   database: {
     configured: boolean;
     dbName: string;
+    mongoUri: string | null;
+    mongoUriVisible: boolean;
     host: string | null;
     state: string;
     lastConnectedAt: string | null;
@@ -85,6 +87,7 @@ const defaultPortfolio: PortfolioData = {
 
 export default function Home() {
   const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const fetchTimeStorageKey = "lastSuccessfulPortfolioFetchAt";
   const [data, setData] = useState<PortfolioData>(defaultPortfolio);
   const [activeTech, setActiveTech] = useState<string>("All");
   const [loading, setLoading] = useState(true);
@@ -99,7 +102,9 @@ export default function Home() {
     try {
       const response = await API.get("/api/portfolio");
       setData(response.data?.data || defaultPortfolio);
-      setLastDataFetchAt(new Date().toISOString());
+      const fetchTime = new Date().toISOString();
+      setLastDataFetchAt(fetchTime);
+      localStorage.setItem(fetchTimeStorageKey, fetchTime);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to load portfolio";
       setError(message);
@@ -110,21 +115,30 @@ export default function Home() {
   };
 
   const loadConnectionStatus = async () => {
-    try {
-      const [healthResponse, statusResponse] = await Promise.all([
+    const [healthResult, statusResult] = await Promise.allSettled([
         API.get("/api/health"),
         API.get("/api/system/status"),
-      ]);
+		]);
 
-      setBackendHealth(healthResponse.data || null);
-      setSystemStatus(statusResponse.data || null);
-    } catch {
+    if (healthResult.status === "fulfilled") {
+      setBackendHealth(healthResult.value.data || null);
+    } else {
       setBackendHealth(null);
+    }
+
+    if (statusResult.status === "fulfilled") {
+      setSystemStatus(statusResult.value.data || null);
+    } else {
       setSystemStatus(null);
     }
   };
 
   useEffect(() => {
+    const storedFetchTime = localStorage.getItem(fetchTimeStorageKey);
+    if (storedFetchTime) {
+      setLastDataFetchAt(storedFetchTime);
+    }
+
     loadPortfolio();
     loadConnectionStatus();
   }, []);
@@ -136,6 +150,26 @@ export default function Home() {
 
     return new Date(iso).toLocaleString();
   };
+
+  const isRecentWithinMinutes = (iso: string | null | undefined, minutes: number) => {
+    if (!iso) {
+      return false;
+    }
+
+    const parsed = new Date(iso).getTime();
+    if (Number.isNaN(parsed)) {
+      return false;
+    }
+
+    const elapsedMs = Date.now() - parsed;
+    return elapsedMs <= minutes * 60 * 1000;
+  };
+
+  const backendFresh = isRecentWithinMinutes(lastDataFetchAt, 60);
+  const mongoFresh = isRecentWithinMinutes(systemStatus?.database?.lastConnectedAt, 60);
+  const mongoUriToShow =
+    systemStatus?.database?.mongoUri ||
+    "Unavailable. Set EXPOSE_MONGO_URI_TO_CLIENT=true in backend env to expose it.";
 
   const technologies = useMemo(() => {
     const set = new Set<string>();
@@ -184,9 +218,13 @@ export default function Home() {
           </div>
           <div className={styles.statusRow}>
             <strong>Backend healthcheck:</strong>
-            <span>
-              {backendHealth?.status === "ok" ? "Healthy" : "Unavailable"}
-              {backendHealth?.timestamp ? ` at ${formatTime(backendHealth.timestamp)}` : ""}
+            <span className={styles.statusValue}>
+              <span
+                className={backendFresh ? styles.statusDotGreen : styles.statusDotRed}
+                aria-hidden="true"
+              />
+              {backendFresh ? "Healthy" : "Stale or unavailable"}
+              {lastDataFetchAt ? ` (last success ${formatTime(lastDataFetchAt)})` : ""}
             </span>
           </div>
           <div className={styles.statusRow}>
@@ -197,7 +235,7 @@ export default function Home() {
           </div>
           <div className={styles.statusRow}>
             <strong>Backend to MongoDB host:</strong>
-            <span>{systemStatus?.database?.host || "Not available"}</span>
+            <span>{mongoUriToShow}</span>
           </div>
           <div className={styles.statusRow}>
             <strong>MongoDB database:</strong>
@@ -205,7 +243,14 @@ export default function Home() {
           </div>
           <div className={styles.statusRow}>
             <strong>MongoDB connection status:</strong>
-            <span>{systemStatus?.database?.state || "unknown"}</span>
+            <span className={styles.statusValue}>
+              <span
+                className={mongoFresh ? styles.statusDotGreen : styles.statusDotRed}
+                aria-hidden="true"
+              />
+              {mongoFresh ? "Connected recently" : "Not connected in last 60 mins"}
+              {systemStatus?.database?.state ? ` (${systemStatus.database.state})` : ""}
+            </span>
           </div>
           <div className={styles.statusRow}>
             <strong>MongoDB last connected:</strong>

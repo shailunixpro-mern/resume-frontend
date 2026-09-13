@@ -69,6 +69,30 @@
   font-size: 0.92rem;
 }
 
+.statusValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusDotGreen,
+.statusDotRed {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.statusDotGreen {
+  background: #56f39a;
+  box-shadow: 0 0 0 3px rgba(86, 243, 154, 0.2);
+}
+
+.statusDotRed {
+  background: #ff6d6d;
+  box-shadow: 0 0 0 3px rgba(255, 109, 109, 0.25);
+}
+
 .statusRow strong {
   color: #ffcf9e;
 }
