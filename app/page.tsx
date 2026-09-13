@@ -44,6 +44,29 @@ type PortfolioData = {
   skills: Skill[];
 };
 
+type BackendHealth = {
+  status: string;
+  timestamp: string;
+  uptime: number;
+};
+
+type BackendSystemStatus = {
+  backend: {
+    url: string;
+    uptime: number;
+    timestamp: string;
+    healthcheckUrl: string;
+  };
+  database: {
+    configured: boolean;
+    dbName: string;
+    host: string | null;
+    state: string;
+    lastConnectedAt: string | null;
+    lastError: string | null;
+  };
+};
+
 const defaultPortfolio: PortfolioData = {
   profile: {
     fullName: "Your Name",
@@ -61,10 +84,14 @@ const defaultPortfolio: PortfolioData = {
 };
 
 export default function Home() {
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
   const [data, setData] = useState<PortfolioData>(defaultPortfolio);
   const [activeTech, setActiveTech] = useState<string>("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const [lastDataFetchAt, setLastDataFetchAt] = useState<string>("");
+  const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
+  const [systemStatus, setSystemStatus] = useState<BackendSystemStatus | null>(null);
 
   const loadPortfolio = async () => {
     setLoading(true);
@@ -72,6 +99,7 @@ export default function Home() {
     try {
       const response = await API.get("/api/portfolio");
       setData(response.data?.data || defaultPortfolio);
+      setLastDataFetchAt(new Date().toISOString());
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to load portfolio";
       setError(message);
@@ -81,9 +109,33 @@ export default function Home() {
     }
   };
 
+  const loadConnectionStatus = async () => {
+    try {
+      const [healthResponse, statusResponse] = await Promise.all([
+        API.get("/api/health"),
+        API.get("/api/system/status"),
+      ]);
+
+      setBackendHealth(healthResponse.data || null);
+      setSystemStatus(statusResponse.data || null);
+    } catch {
+      setBackendHealth(null);
+      setSystemStatus(null);
+    }
+  };
+
   useEffect(() => {
     loadPortfolio();
+    loadConnectionStatus();
   }, []);
+
+  const formatTime = (iso: string | null | undefined) => {
+    if (!iso) {
+      return "Not available";
+    }
+
+    return new Date(iso).toLocaleString();
+  };
 
   const technologies = useMemo(() => {
     const set = new Set<string>();
@@ -121,6 +173,46 @@ export default function Home() {
       <Navbar name={data.profile.fullName} />
 
       <main className={styles.main}>
+        <section className={styles.statusPanel}>
+          <div className={styles.statusRow}>
+            <strong>Frontend to Backend URL:</strong>
+            <span>{backendUrl}</span>
+          </div>
+          <div className={styles.statusRow}>
+            <strong>Last portfolio fetch:</strong>
+            <span>{formatTime(lastDataFetchAt)}</span>
+          </div>
+          <div className={styles.statusRow}>
+            <strong>Backend healthcheck:</strong>
+            <span>
+              {backendHealth?.status === "ok" ? "Healthy" : "Unavailable"}
+              {backendHealth?.timestamp ? ` at ${formatTime(backendHealth.timestamp)}` : ""}
+            </span>
+          </div>
+          <div className={styles.statusRow}>
+            <strong>Health endpoint:</strong>
+            <span>
+              {systemStatus?.backend?.healthcheckUrl || `${backendUrl}/api/health`}
+            </span>
+          </div>
+          <div className={styles.statusRow}>
+            <strong>Backend to MongoDB host:</strong>
+            <span>{systemStatus?.database?.host || "Not available"}</span>
+          </div>
+          <div className={styles.statusRow}>
+            <strong>MongoDB database:</strong>
+            <span>{systemStatus?.database?.dbName || "Not available"}</span>
+          </div>
+          <div className={styles.statusRow}>
+            <strong>MongoDB connection status:</strong>
+            <span>{systemStatus?.database?.state || "unknown"}</span>
+          </div>
+          <div className={styles.statusRow}>
+            <strong>MongoDB last connected:</strong>
+            <span>{formatTime(systemStatus?.database?.lastConnectedAt)}</span>
+          </div>
+        </section>
+
         <section className={styles.hero}>
           <p className={styles.kicker}>Open to impactful product engineering roles</p>
           <h1>{data.profile.fullName}</h1>

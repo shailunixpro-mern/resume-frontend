@@ -50,6 +50,29 @@
   gap: 20px;
 }
 
+.statusPanel {
+  background: rgba(23, 31, 52, 0.9);
+  color: #f4f7ff;
+  border: 1px solid rgba(133, 160, 210, 0.45);
+  border-radius: 18px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+  animation: riseIn 500ms ease;
+}
+
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+
+.statusRow strong {
+  color: #ffcf9e;
+}
+
 .hero,
 .panel,
 .footerCta {
@@ -261,6 +284,11 @@
 @media (max-width: 640px) {
   .main {
     padding: 14px 14px 22px;
+  }
+
+  .statusPanel {
+    border-radius: 14px;
+    padding: 14px;
   }
 
   .hero,
