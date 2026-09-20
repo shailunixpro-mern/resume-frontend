@@ -95,6 +95,11 @@ export default function Home() {
   const [lastDataFetchAt, setLastDataFetchAt] = useState<string>("");
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
   const [systemStatus, setSystemStatus] = useState<BackendSystemStatus | null>(null);
+  const [aiInput, setAiInput] = useState<string>("");
+  const [aiOutput, setAiOutput] = useState<string>("");
+  const [aiModel, setAiModel] = useState<string>("");
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
+  const [aiError, setAiError] = useState<string>("");
 
   const loadPortfolio = async () => {
     setLoading(true);
@@ -200,6 +205,41 @@ export default function Home() {
     }, {});
   }, [data.skills]);
 
+  const processWithAi = async () => {
+    if (!aiInput.trim()) {
+      setAiError("Enter some text before sending it to the AI endpoint.");
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError("");
+
+    try {
+      const response = await fetch("/api/ai/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ input: aiInput.trim() }),
+      });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.message || `AI request failed with status ${response.status}`);
+      }
+
+      setAiOutput(body?.data?.output || "");
+      setAiModel(body?.data?.model || "");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to process input with AI";
+      setAiError(message);
+      setAiOutput("");
+      setAiModel("");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   return (
     <div className={styles.page}>
       <div className={styles.glowOne} />
@@ -278,6 +318,42 @@ export default function Home() {
                 Resume
               </a>
             )}
+          </div>
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.sectionHead}>
+            <h3>AI Processing</h3>
+            <p>Send a short text payload to an OpenAI-compatible API through the Next server.</p>
+          </div>
+
+          <div className={styles.aiPanel}>
+            <label className={styles.aiLabel} htmlFor="ai-input">
+              Text to process
+            </label>
+            <div className={styles.aiControls}>
+              <input
+                id="ai-input"
+                type="text"
+                className={styles.aiInput}
+                placeholder="Enter text and send it to the AI endpoint"
+                value={aiInput}
+                onChange={(event) => setAiInput(event.target.value)}
+              />
+              <button type="button" className={styles.aiButton} onClick={processWithAi} disabled={aiLoading}>
+                {aiLoading ? "Sending..." : "Send to AI"}
+              </button>
+            </div>
+
+            {aiError && <p className={styles.aiError}>{aiError}</p>}
+
+            <div className={styles.aiOutputCard}>
+              <div className={styles.aiOutputHeader}>
+                <strong>Response</strong>
+                <span>{aiModel ? `Model: ${aiModel}` : "No response yet"}</span>
+              </div>
+              <pre className={styles.aiOutput}>{aiOutput || "Processed text will appear here and the same request/response will be logged in the Next terminal."}</pre>
+            </div>
           </div>
         </section>
 

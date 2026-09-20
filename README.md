@@ -18,6 +18,9 @@ Open `http://localhost:3000`.
 ## Environment Variables
 
 - `NEXT_PUBLIC_API_URL` Base URL for backend API. Example: `http://localhost:5000`
+- `OPENAI_COMPATIBLE_BASE_URL` OpenAI-compatible API base URL. Example: `https://openrouter.ai/api/v1`
+- `OPENAI_API_KEY` API key for your OpenAI-compatible provider
+- `OPENAI_MODEL` Model name exposed by that provider. Example free-tier compatible value: `openai/gpt-oss-20b:free`
 
 ## Features
 
@@ -25,6 +28,14 @@ Open `http://localhost:3000`.
 - Interactive project filtering by technology.
 - Graceful loading and retry on API failure.
 - Aggregated API consumption for efficient first load.
+- Simple AI processing box that sends text through a server-side Next route and logs prompt/response in the terminal.
+
+## AI Processing Notes
+
+- The new UI calls `POST /api/ai/process` inside this Next app.
+- That route logs the prompt and model response to the Next.js terminal/server logs.
+- The browser never receives the provider API key.
+- OpenAI itself does not generally provide a free production API, so this integration is designed for any OpenAI-compatible provider, including free-tier compatible endpoints.
 
 ## Production Notes
 
