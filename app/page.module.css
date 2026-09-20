@@ -328,6 +328,15 @@
   gap: 12px;
 }
 
+.resumeViewerFrame {
+  width: 100%;
+  min-height: 760px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  overflow: auto;
+}
+
 .aiOutputHeader {
   display: flex;
   justify-content: space-between;

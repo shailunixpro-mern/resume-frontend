@@ -315,6 +315,45 @@ export default function Home() {
     return personalDetails.find((document) => document._id === personalDetailId) || null;
   }, [personalDetailId, personalDetails]);
 
+  const resumeViewerSrcDoc = useMemo(() => {
+    if (resumeOutput.trim()) {
+      return resumeOutput;
+    }
+
+    return `
+      <!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <style>
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              margin: 0;
+              padding: 24px;
+              color: #1f2a44;
+              background: linear-gradient(180deg, #ffffff, #f7f4ee);
+            }
+            .placeholder {
+              border: 1px dashed #c7c1b8;
+              border-radius: 16px;
+              padding: 24px;
+              background: rgba(255, 255, 255, 0.8);
+            }
+            h1 { margin: 0 0 12px; }
+            p { margin: 0; line-height: 1.6; }
+          </style>
+        </head>
+        <body>
+          <div class="placeholder">
+            <h1>Generated resume will appear here</h1>
+            <p>The HTML response from Grok will be rendered in this scrollable viewer.</p>
+          </div>
+        </body>
+      </html>
+    `;
+  }, [resumeOutput]);
+
   const getPersonalDetailLabel = (document: PersonalDetailDocument) => {
     const nameCandidate =
       typeof document.fullName === "string"
@@ -519,12 +558,15 @@ export default function Home() {
 
             <div className={styles.resumeOutputCard}>
               <div className={styles.aiOutputHeader}>
-                <strong>Generated resume</strong>
+                <strong>Generated resume HTML</strong>
                 <span>{resumeModel ? `Model: ${resumeModel}` : "Awaiting generation"}</span>
               </div>
-              <article className={styles.resumeOutput}>
-                {resumeOutput || "The generated resume will appear here after the MongoDB collections are traversed and sent to Grok."}
-              </article>
+              <iframe
+                className={styles.resumeViewerFrame}
+                title="Generated resume HTML viewer"
+                srcDoc={resumeViewerSrcDoc}
+                sandbox="allow-same-origin"
+              />
             </div>
           </div>
         </section>

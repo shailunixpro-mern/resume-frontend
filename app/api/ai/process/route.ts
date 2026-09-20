@@ -52,7 +52,9 @@ const buildResumePrompt = (resumeSource: {
   triples: Array<{ collectionName: string; fieldName: string; value: unknown; documentId: string }>;
 }) => {
   return [
-    "Please create a Resume using the below feilds in Json format",
+    "Please create a Resume using the below feilds in Json format.",
+    "Return only valid, well-formatted HTML for the resume. Do not wrap the response in markdown, code fences, or explanations.",
+    "Use semantic HTML sections and include a small amount of CSS styling inline or inside a style block so the resume is readable.",
     JSON.stringify(
       {
         personalDetailId: resumeSource.personalDetailId,
@@ -62,6 +64,17 @@ const buildResumePrompt = (resumeSource: {
       2
     ),
   ].join("\n\n");
+};
+
+const stripCodeFences = (value: string) => {
+  const trimmed = value.trim();
+  const fencedMatch = trimmed.match(/^```(?:html)?\s*([\s\S]*?)```$/i);
+
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  return trimmed;
 };
 
 const serializeSourceValue = (value: unknown): unknown => {
@@ -352,13 +365,15 @@ export async function POST(request: Request) {
       upstreamBody?.choices?.[0]?.text ||
       "";
 
-    console.log(`[AI response] ${output}`);
+    const htmlOutput = stripCodeFences(String(output));
+
+    console.log(`[AI response] ${htmlOutput}`);
 
     return NextResponse.json({
       success: true,
       data: {
         input: mode === "resume" ? personalDetailId : input,
-        output,
+        output: htmlOutput,
         model: OPENAI_MODEL,
         providerBaseUrl: OPENAI_BASE_URL,
         mode,
