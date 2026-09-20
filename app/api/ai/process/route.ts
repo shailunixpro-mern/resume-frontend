@@ -14,6 +14,39 @@ type ResumeSourceSummary = {
   relationshipCount: number;
 };
 
+type BackendResumeSource = {
+  personalDetailId: string;
+  collectionsExamined: string[];
+  availableCollections: string[];
+  missingCollections: string[];
+  relationshipMatches: Array<{
+    collectionName: string;
+    documentId: string;
+    fieldName: string;
+    matchedId: string;
+  }>;
+  triples: Array<{
+    collectionName: string;
+    fieldName: string;
+    value: unknown;
+    documentId: string;
+  }>;
+  documentsByCollection: Record<string, Array<Record<string, unknown>>>;
+};
+
+const RESUME_COLLECTIONS = [
+  "Academic_History",
+  "All_Technologies_Aware_of",
+  "Company_Details",
+  "Personal_Details_Table",
+  "Project_Per_Company_details",
+  "Tech_Certification_Persued",
+  "Tech_Trainings_Given",
+  "Tech_Trainings_Recieved",
+  "Tech_Vendor_Reference_Table",
+  "Technolologies_Per_Project_Per_Company_Details",
+];
+
 const buildResumePrompt = (resumeSource: {
   personalDetailId: string;
   triples: Array<{ collectionName: string; fieldName: string; value: unknown; documentId: string }>;
@@ -30,6 +63,146 @@ const buildResumePrompt = (resumeSource: {
     JSON.stringify(resumeSource.documentsByCollection, null, 2),
     `Personal detail object id: ${resumeSource.personalDetailId}`,
   ].join("\n\n");
+};
+
+const serializeSourceValue = (value: unknown): unknown => {
+  if (value === null || value === undefined) {
+    return value ?? null;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(serializeSourceValue);
+  }
+
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, nested]) => [key, serializeSourceValue(nested)])
+    );
+  }
+
+  return value;
+};
+
+const isObjectIdLike = (value: unknown) => {
+  return typeof value === "string" && /^[a-fA-F0-9]{24}$/.test(value);
+};
+
+const collectReferenceValues = (value: unknown, accumulator = new Set<string>()) => {
+  if (value === null || value === undefined) {
+    return accumulator;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectReferenceValues(item, accumulator));
+    return accumulator;
+  }
+
+  if (typeof value === "object") {
+    Object.values(value as Record<string, unknown>).forEach((nested) => collectReferenceValues(nested, accumulator));
+    return accumulator;
+  }
+
+  if (isObjectIdLike(value)) {
+    accumulator.add(String(value));
+  }
+
+  return accumulator;
+};
+
+const buildResumeSourceFromDocuments = async (personalDetailId: string): Promise<BackendResumeSource> => {
+  const metadataResponse = await fetch(`${BACKEND_API_URL.replace(/\/$/, "")}/api/documents/metadata`, {
+    cache: "no-store",
+  });
+  const metadataBody = await metadataResponse.json().catch(() => ({}));
+
+  if (!metadataResponse.ok) {
+    throw new Error(
+      metadataBody?.message || `Failed to load document metadata with status ${metadataResponse.status}`
+    );
+  }
+
+  const collections = Array.isArray(metadataBody?.data?.collections)
+    ? metadataBody.data.collections.filter((collectionName: unknown) =>
+        RESUME_COLLECTIONS.includes(String(collectionName))
+      )
+    : RESUME_COLLECTIONS;
+
+  const documentsByCollection: Record<string, Array<Record<string, unknown>>> = Object.fromEntries(
+    RESUME_COLLECTIONS.map((collectionName) => [collectionName, []])
+  );
+
+  const relationshipMatches: BackendResumeSource["relationshipMatches"] = [];
+  const knownIds = new Set<string>([personalDetailId]);
+  const includedKeys = new Set<string>();
+
+  for (const collectionName of collections) {
+    const response = await fetch(
+      `${BACKEND_API_URL.replace(/\/$/, "")}/api/documents/${encodeURIComponent(collectionName)}?limit=100`,
+      { cache: "no-store" }
+    );
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      continue;
+    }
+
+    const documents = Array.isArray(body?.data?.documents) ? body.data.documents : [];
+    documentsByCollection[collectionName] = documents;
+
+    for (const document of documents) {
+      const documentId = String(document?._id || "");
+      const documentRefs = collectReferenceValues(document);
+      const matchesKnownId = Array.from(documentRefs).some((referenceId) => knownIds.has(referenceId));
+
+      if (collectionName === "Personal_Details_Table" && documentId === personalDetailId) {
+        includedKeys.add(`${collectionName}:${documentId}`);
+        collectReferenceValues(document, knownIds);
+        continue;
+      }
+
+      if (matchesKnownId) {
+        includedKeys.add(`${collectionName}:${documentId}`);
+        relationshipMatches.push({
+          collectionName,
+          documentId,
+          fieldName: "reference",
+          matchedId: personalDetailId,
+        });
+        collectReferenceValues(document, knownIds);
+      }
+    }
+  }
+
+  const triples: BackendResumeSource["triples"] = [];
+  Object.entries(documentsByCollection).forEach(([collectionName, documents]) => {
+    documents.forEach((document) => {
+      Object.entries(document).forEach(([fieldName, value]) => {
+        if (fieldName === "_id") {
+          return;
+        }
+
+        triples.push({
+          collectionName,
+          fieldName,
+          value: serializeSourceValue(value),
+          documentId: String(document._id || ""),
+        });
+      });
+    });
+  });
+
+  const availableCollections = RESUME_COLLECTIONS.filter((collectionName) => documentsByCollection[collectionName].length > 0);
+  const missingCollections = RESUME_COLLECTIONS.filter((collectionName) => documentsByCollection[collectionName].length === 0);
+
+  return {
+    personalDetailId,
+    collectionsExamined: RESUME_COLLECTIONS,
+    availableCollections,
+    missingCollections,
+    relationshipMatches,
+    triples,
+    documentsByCollection,
+  };
 };
 
 export async function POST(request: Request) {
@@ -75,27 +248,30 @@ export async function POST(request: Request) {
         );
       }
 
-      const resumeSourceResponse = await fetch(
-        `${BACKEND_API_URL.replace(/\/$/, "")}/api/resume-source/${encodeURIComponent(personalDetailId)}`,
-        {
-          cache: "no-store",
-        }
-      );
-      const resumeSourceBody = await resumeSourceResponse.json().catch(() => ({}));
-
-      if (!resumeSourceResponse.ok) {
-        return NextResponse.json(
+      let resumeSource: BackendResumeSource;
+      try {
+        const resumeSourceResponse = await fetch(
+          `${BACKEND_API_URL.replace(/\/$/, "")}/api/resume-source/${encodeURIComponent(personalDetailId)}`,
           {
-            success: false,
-            message:
-              resumeSourceBody?.message ||
-              `Failed to load resume source data with status ${resumeSourceResponse.status}`,
-          },
-          { status: resumeSourceResponse.status }
+            cache: "no-store",
+          }
         );
+        const resumeSourceBody = await resumeSourceResponse.json().catch(() => ({}));
+
+        if (!resumeSourceResponse.ok) {
+          throw new Error(
+            resumeSourceBody?.message ||
+              `Failed to load resume source data with status ${resumeSourceResponse.status}`
+          );
+        }
+
+        resumeSource = resumeSourceBody?.data;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to load resume source data";
+        console.log(`[AI resume fallback] ${message}. Falling back to document aggregation.`);
+        resumeSource = await buildResumeSourceFromDocuments(personalDetailId);
       }
 
-      const resumeSource = resumeSourceBody?.data;
       userPrompt = buildResumePrompt(resumeSource);
       sourceSummary = {
         collectionsWithData: Object.entries(resumeSource?.documentsByCollection || {})
