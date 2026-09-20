@@ -50,18 +50,17 @@ const RESUME_COLLECTIONS = [
 const buildResumePrompt = (resumeSource: {
   personalDetailId: string;
   triples: Array<{ collectionName: string; fieldName: string; value: unknown; documentId: string }>;
-  documentsByCollection: Record<string, Array<Record<string, unknown>>>;
 }) => {
   return [
-    "Create a professional resume in Markdown using only the supplied MongoDB source data.",
-    "Do not invent facts, employers, dates, projects, skills, or education details that are not present in the data.",
-    "Prefer a clean format with these sections when data exists: Name and Contact, Professional Summary, Experience, Projects, Skills, Certifications, Training, Education.",
-    "If data is incomplete, omit the section or explicitly mark it as unavailable.",
-    "Source triples:",
-    JSON.stringify(resumeSource.triples, null, 2),
-    "Source documents grouped by collection:",
-    JSON.stringify(resumeSource.documentsByCollection, null, 2),
-    `Personal detail object id: ${resumeSource.personalDetailId}`,
+    "Please create a Resume using the below feilds in Json format",
+    JSON.stringify(
+      {
+        personalDetailId: resumeSource.personalDetailId,
+        triples: resumeSource.triples,
+      },
+      null,
+      2
+    ),
   ].join("\n\n");
 };
 
