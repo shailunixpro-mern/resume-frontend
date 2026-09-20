@@ -69,6 +69,17 @@ type BackendSystemStatus = {
   };
 };
 
+type ResumeSourceSummary = {
+  collectionsWithData: string[];
+  tripleCount: number;
+  relationshipCount: number;
+};
+
+type PersonalDetailDocument = {
+  _id: string;
+  [key: string]: unknown;
+};
+
 const defaultPortfolio: PortfolioData = {
   profile: {
     fullName: "Your Name",
@@ -86,7 +97,7 @@ const defaultPortfolio: PortfolioData = {
 };
 
 export default function Home() {
-  const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+  const backendUrl = process.env.NEXT_PUBLIC_API_URL || "Not configured";
   const fetchTimeStorageKey = "lastSuccessfulPortfolioFetchAt";
   const [data, setData] = useState<PortfolioData>(defaultPortfolio);
   const [activeTech, setActiveTech] = useState<string>("All");
@@ -100,6 +111,13 @@ export default function Home() {
   const [aiModel, setAiModel] = useState<string>("");
   const [aiLoading, setAiLoading] = useState<boolean>(false);
   const [aiError, setAiError] = useState<string>("");
+  const [personalDetailId, setPersonalDetailId] = useState<string>("");
+  const [personalDetails, setPersonalDetails] = useState<PersonalDetailDocument[]>([]);
+  const [resumeOutput, setResumeOutput] = useState<string>("");
+  const [resumeModel, setResumeModel] = useState<string>("");
+  const [resumeLoading, setResumeLoading] = useState<boolean>(false);
+  const [resumeError, setResumeError] = useState<string>("");
+  const [resumeSourceSummary, setResumeSourceSummary] = useState<ResumeSourceSummary | null>(null);
 
   const loadPortfolio = async () => {
     setLoading(true);
@@ -138,6 +156,16 @@ export default function Home() {
     }
   };
 
+  const loadPersonalDetailOptions = async () => {
+    const response = await API.get("/api/documents/Personal_Details_Table?limit=25");
+    const documents = response.data?.data?.documents || [];
+    setPersonalDetails(documents);
+
+    if (!personalDetailId && documents.length > 0) {
+      setPersonalDetailId(documents[0]._id);
+    }
+  };
+
   useEffect(() => {
     const storedFetchTime = localStorage.getItem(fetchTimeStorageKey);
     if (storedFetchTime) {
@@ -146,6 +174,9 @@ export default function Home() {
 
     loadPortfolio();
     loadConnectionStatus();
+    loadPersonalDetailOptions().catch(() => {
+      setPersonalDetails([]);
+    });
   }, []);
 
   const formatTime = (iso: string | null | undefined) => {
@@ -240,6 +271,63 @@ export default function Home() {
     }
   };
 
+  const generateResume = async () => {
+    if (!personalDetailId.trim()) {
+      setResumeError("Enter or select a Personal_Details_Table object id first.");
+      return;
+    }
+
+    setResumeLoading(true);
+    setResumeError("");
+
+    try {
+      const response = await fetch("/api/ai/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "resume",
+          personalDetailId: personalDetailId.trim(),
+        }),
+      });
+
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.message || `Resume request failed with status ${response.status}`);
+      }
+
+      setResumeOutput(body?.data?.output || "");
+      setResumeModel(body?.data?.model || "");
+      setResumeSourceSummary(body?.data?.sourceSummary || null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to generate resume";
+      setResumeError(message);
+      setResumeOutput("");
+      setResumeModel("");
+      setResumeSourceSummary(null);
+    } finally {
+      setResumeLoading(false);
+    }
+  };
+
+  const selectedPersonalDetail = useMemo(() => {
+    return personalDetails.find((document) => document._id === personalDetailId) || null;
+  }, [personalDetailId, personalDetails]);
+
+  const getPersonalDetailLabel = (document: PersonalDetailDocument) => {
+    const nameCandidate =
+      typeof document.fullName === "string"
+        ? document.fullName
+        : typeof document.name === "string"
+          ? document.name
+          : typeof document.email === "string"
+            ? document.email
+            : "Personal detail record";
+
+    return `${nameCandidate} (${document._id})`;
+  };
+
   return (
     <div className={styles.page}>
       <div className={styles.glowOne} />
@@ -270,7 +358,7 @@ export default function Home() {
           <div className={styles.statusRow}>
             <strong>Health endpoint:</strong>
             <span>
-              {systemStatus?.backend?.healthcheckUrl || `${backendUrl}/api/health`}
+              {systemStatus?.backend?.healthcheckUrl || (backendUrl !== "Not configured" ? `${backendUrl}/api/health` : "Not configured")}
             </span>
           </div>
           <div className={styles.statusRow}>
@@ -353,6 +441,90 @@ export default function Home() {
                 <span>{aiModel ? `Model: ${aiModel}` : "No response yet"}</span>
               </div>
               <pre className={styles.aiOutput}>{aiOutput || "Processed text will appear here and the same request/response will be logged in the Next terminal."}</pre>
+            </div>
+          </div>
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.sectionHead}>
+            <h3>AI Resume Builder</h3>
+            <p>Traverse the MongoDB resume collections from a Personal_Details_Table object id and generate a resume with Grok.</p>
+          </div>
+
+          <div className={styles.resumeBuilder}>
+            <label className={styles.aiLabel} htmlFor="personal-detail-select">
+              Personal_Details_Table record
+            </label>
+            <div className={styles.resumeControls}>
+              <select
+                id="personal-detail-select"
+                className={styles.aiInput}
+                value={personalDetailId}
+                onChange={(event) => setPersonalDetailId(event.target.value)}
+              >
+                {personalDetails.length === 0 && <option value="">No Personal_Details_Table documents available</option>}
+                {personalDetails.map((document) => (
+                  <option key={document._id} value={document._id}>
+                    {getPersonalDetailLabel(document)}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className={styles.aiButton} onClick={loadPersonalDetailOptions} disabled={resumeLoading}>
+                Refresh IDs
+              </button>
+            </div>
+
+            <label className={styles.aiLabel} htmlFor="personal-detail-id">
+              Or enter object id manually
+            </label>
+            <div className={styles.resumeControls}>
+              <input
+                id="personal-detail-id"
+                type="text"
+                className={styles.aiInput}
+                placeholder="Paste Personal_Details_Table object id"
+                value={personalDetailId}
+                onChange={(event) => setPersonalDetailId(event.target.value)}
+              />
+              <button type="button" className={styles.aiButton} onClick={generateResume} disabled={resumeLoading}>
+                {resumeLoading ? "Generating..." : "Generate Resume"}
+              </button>
+            </div>
+
+            {resumeError && <p className={styles.aiError}>{resumeError}</p>}
+
+            {selectedPersonalDetail && (
+              <div className={styles.resumeMetaCard}>
+                <strong>Selected source record</strong>
+                <pre className={styles.resumeMetaPre}>{JSON.stringify(selectedPersonalDetail, null, 2)}</pre>
+              </div>
+            )}
+
+            {resumeSourceSummary && (
+              <div className={styles.resumeSummaryGrid}>
+                <div className={styles.resumeSummaryCard}>
+                  <span>Collections with data</span>
+                  <strong>{resumeSourceSummary.collectionsWithData.length}</strong>
+                </div>
+                <div className={styles.resumeSummaryCard}>
+                  <span>Field/value triples</span>
+                  <strong>{resumeSourceSummary.tripleCount}</strong>
+                </div>
+                <div className={styles.resumeSummaryCard}>
+                  <span>Relationship matches</span>
+                  <strong>{resumeSourceSummary.relationshipCount}</strong>
+                </div>
+              </div>
+            )}
+
+            <div className={styles.resumeOutputCard}>
+              <div className={styles.aiOutputHeader}>
+                <strong>Generated resume</strong>
+                <span>{resumeModel ? `Model: ${resumeModel}` : "Awaiting generation"}</span>
+              </div>
+              <article className={styles.resumeOutput}>
+                {resumeOutput || "The generated resume will appear here after the MongoDB collections are traversed and sent to Grok."}
+              </article>
             </div>
           </div>
         </section>

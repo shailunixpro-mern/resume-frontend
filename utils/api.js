@@ -1,8 +1,18 @@
 import axios from "axios";
 
+const backendBaseUrl = process.env.NEXT_PUBLIC_API_URL;
+
 const API = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000",
+  baseURL: backendBaseUrl,
   timeout: 10000,
+});
+
+API.interceptors.request.use((config) => {
+  if (!backendBaseUrl) {
+    return Promise.reject(new Error("NEXT_PUBLIC_API_URL is not configured"));
+  }
+
+  return config;
 });
 
 API.interceptors.response.use(

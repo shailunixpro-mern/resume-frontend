@@ -13,11 +13,11 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open the app using the URL printed by Next.js for your environment.
 
 ## Environment Variables
 
-- `NEXT_PUBLIC_API_URL` Base URL for backend API. Example: `http://localhost:5000`
+- `NEXT_PUBLIC_API_URL` Base URL for backend API. Example: `https://your-backend.example.com`
 - `OPENAI_COMPATIBLE_BASE_URL` OpenAI-compatible API base URL. Example: `https://openrouter.ai/api/v1`
 - `OPENAI_API_KEY` API key for your OpenAI-compatible provider
 - `OPENAI_MODEL` Model name exposed by that provider. Example free-tier compatible value: `openai/gpt-oss-20b:free`
@@ -41,3 +41,4 @@ Open `http://localhost:3000`.
 
 - Build with `npm run build` and run with `npm run start`.
 - `next.config.ts` uses standalone output for easier container and platform hosting.
+- The app does not fall back to loopback backend URLs. `NEXT_PUBLIC_API_URL` must be set explicitly.
